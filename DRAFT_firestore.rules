@@ -1,0 +1,81 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Container Validation Helper
+    function isValidContainer(data) {
+      return (data.keys().hasAll(['type', 'status', 'is_ready_billing', 'created_at', 'updated_at']) &&
+             data.keys().size() >= 5 && // Allow optional foreign_code, local_code
+             data.type in ['FOREIGN', 'LOCAL'] &&
+             data.status in ['REPAIRING', 'DONE', 'FOR_BILLING'] &&
+             data.is_ready_billing is bool &&
+             data.created_at is timestamp &&
+             data.updated_at is timestamp &&
+             (data.foreign_code == null || (data.foreign_code is string && data.foreign_code.size() <= 64)) &&
+             (data.local_code == null || (data.local_code is string && data.local_code.size() <= 64)));
+    }
+
+    match /containers/{containerId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn(); // In a real app we might want to restrict this more, but for a repair tracker usually team-wide access is okay if signed in.
+
+      allow create: if isSignedIn() &&
+                      isValidId(containerId) &&
+                      isValidContainer(incoming()) &&
+                      incoming().status == 'REPAIRING' &&
+                      incoming().is_ready_billing == false &&
+                      incoming().created_at == request.time &&
+                      incoming().updated_at == request.time;
+
+      allow update: if isSignedIn() &&
+                      isValidContainer(incoming()) &&
+                      incoming().updated_at == request.time &&
+                      incoming().created_at == existing().created_at &&
+                      (
+                        // Action: Add Local Code (Immutable foreign_code)
+                        (incoming().diff(existing()).affectedKeys().hasOnly(['local_code', 'updated_at']) &&
+                         existing().type == 'FOREIGN' &&
+                         existing().local_code == null &&
+                         incoming().local_code != null) ||
+
+                        // Action: Mark as DONE (REPAIRING -> DONE)
+                        (incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updated_at']) &&
+                         existing().status == 'REPAIRING' &&
+                         incoming().status == 'DONE') ||
+
+                        // Action: Mark for BILLING (DONE -> FOR_BILLING)
+                        (incoming().diff(existing()).affectedKeys().hasOnly(['status', 'is_ready_billing', 'updated_at']) &&
+                         existing().status == 'DONE' &&
+                         incoming().status == 'FOR_BILLING' &&
+                         incoming().is_ready_billing == true)
+                      );
+      
+      allow delete: if false; // Deletion not requested
+    }
+  }
+}

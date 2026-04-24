@@ -1,0 +1,50 @@
+{
+  "entities": {
+    "Container": {
+      "title": "Container",
+      "description": "Represents a shipping container being repaired.",
+      "type": "object",
+      "properties": {
+        "foreign_code": {
+          "type": "string",
+          "description": "The foreign identification code of the container."
+        },
+        "local_code": {
+          "type": "string",
+          "description": "The local identification code associated with the container."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["FOREIGN", "LOCAL"],
+          "description": "Whether the container was initially registered as foreign or local."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["REPAIRING", "DONE", "FOR_BILLING"],
+          "description": "The current repair or billing status of the container."
+        },
+        "is_ready_billing": {
+          "type": "boolean",
+          "description": "Flag indicating if the container is ready for billing."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of record creation."
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of last update."
+        }
+      },
+      "required": ["type", "status", "is_ready_billing", "created_at", "updated_at"]
+    }
+  },
+  "firestore": {
+    "/containers/{containerId}": {
+      "schema": "Container",
+      "description": "Collection of container repair records."
+    }
+  }
+}
